@@ -33,3 +33,7 @@
 @media(max-width:560px){.picker{width:min(360px,calc(100vw - 20px));border-radius:16px}.hero{padding:14px 16px}.dateNav{height:46px}.week,.grid{padding-left:8px;padding-right:8px}.grid{padding-bottom:12px}.empty{height:34px}.day{height:34px;min-height:34px}.credit{padding-bottom:max(18px,env(safe-area-inset-bottom))}}
 @media(max-height:700px){.overlay{padding:8px}.picker{max-height:calc(100dvh - 16px);border-radius:12px}.hero{padding:10px 14px}.hero #heroYear{font-size:10px}.hero #heroDate{font-size:19px}.dateNav{height:40px}.dateNav button{height:32px;font-size:27px}.week,.grid{padding-top:5px}.grid{padding-bottom:7px}.empty{height:30px}.day{height:30px;min-height:30px;font-size:9px}}
 @media(max-width:360px){.picker{width:calc(100vw - 12px)}.hero #heroDate{font-size:18px}.week,.grid{padding-left:5px;padding-right:5px;gap:1px}.day{font-size:9px}}
+
+/* Dynamic seat-class count inside matrix cells */
+.cellClasses{display:inline-block;font-size:.72em;font-weight:600;line-height:1;opacity:.72;margin-left:3px;white-space:nowrap}
+@media (max-width:520px){.cellClasses{font-size:.66em;margin-left:2px}}

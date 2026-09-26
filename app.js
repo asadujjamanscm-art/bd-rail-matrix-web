@@ -5,7 +5,7 @@ let result=null, calendar=new Date(), chosen=null, currentMode='matrix', finderD
 function stationMatches(q){q=norm(q);const c=aliases[q]||q;return [...new Set(STATIONS)].filter(s=>!q||norm(s).includes(q)||norm(s).includes(c)).slice(0,30)}
 function trainMatches(q){q=norm(q);return TRAINS.filter(([n,name])=>!q||String(n).includes(q)||norm(name).includes(q)).slice(0,30)}
 function menu(input,box,items,onPick){box.innerHTML=items.map(x=>`<div class="item" data-v="${encodeURIComponent(x.v)}"><b>${x.title}</b>${x.sub?`<span>${x.sub}</span>`:''}</div>`).join('');box.classList.toggle('open',items.length>0);box.querySelectorAll('.item').forEach(el=>el.onclick=()=>{onPick(decodeURIComponent(el.dataset.v));box.classList.remove('open')})}
-function selectOnFocus(input){input.addEventListener('focus',()=>{input.select(); if(input.id==='from')menu(input,$('fromMenu'),stationMatches(''),v=>$('from').value=v);if(input.id==='to')menu(input,$('toMenu'),stationMatches(''),v=>$('to').value=v);if(input.id==='train')showTrainMenu('')})}
+function selectOnFocus(input){input.addEventListener('focus',()=>{input.select(); if(input.id==='from')menu(input,$('fromMenu'),stationMatches('').map(v=>({v,title:v})),v=>$('from').value=v);if(input.id==='to')menu(input,$('toMenu'),stationMatches('').map(v=>({v,title:v})),v=>$('to').value=v);if(input.id==='train')showTrainMenu('')})}
 selectOnFocus($('from'));selectOnFocus($('to'));selectOnFocus($('train'));
 $('from').oninput=()=>menu($('from'),$('fromMenu'),stationMatches($('from').value).map(v=>({v,title:v})),v=>$('from').value=v);
 $('to').oninput=()=>menu($('to'),$('toMenu'),stationMatches($('to').value).map(v=>({v,title:v})),v=>$('to').value=v);
@@ -23,7 +23,30 @@ function setStatus(t,error=false){$('status').textContent=t;$('status').classLis
 function render(data){result=data;$('result').hidden=false;$('finderResult').hidden=true;$('title').textContent=data.request.display;$('route').textContent=`${data.request.from} → ${data.request.to}`;$('loadedAt').textContent=`Updated ${new Date().toLocaleTimeString()}`;const classes=[...new Set(data.pairs.flatMap(p=>Object.keys(p.classes||{})))];$('cls').innerHTML='<option value="">All classes</option>'+classes.map(c=>`<option>${c}</option>`).join('');draw()}
 function draw(){if(!result)return;const cls=$('cls').value,filter=norm($('filter').value),pairs=result.pairs.filter(p=>!filter||norm(p.origin).includes(filter)||norm(p.dest).includes(filter));const stations=[...new Set(pairs.flatMap(p=>[p.origin,p.dest]))];let h='<div class="matrix"><table><thead><tr><th>STATION</th>'+stations.map(s=>`<th>${s}</th>`).join('')+'</tr></thead><tbody>';for(const s of stations){h+=`<tr><td>${s}</td>`;for(const t of stations){const p=pairs.find(x=>x.origin===s&&x.dest===t);let val=0;if(p){const cs=cls&&p.classes[cls]?[p.classes[cls]]:Object.values(p.classes||{});val=cs.reduce((a,c)=>a+Number(c.total||0),0)}h+=`<td><span class="cell ${val?'has':'zero'}">${val||'—'}</span></td>`}h+='</tr>'}h+='</tbody></table></div>';$('matrix').innerHTML=h}
 async function load(){const tr=parsedTrain(),from=$('from').value.trim(),to=$('to').value.trim(),date=$('date').value;if(!from||!to||!date||!tr){setStatus('Enter valid From, To, Date and Train.',true);return}$('load').disabled=true;setStatus('Loading live seat matrix…');try{const q=new URLSearchParams({from,to,date,trainModel:tr.model,tripNumber:tr.trip,display:tr.display});const r=await fetch('/api/matrix?'+q);const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Matrix request failed');render(j.data);setStatus('Live matrix loaded.')}catch(e){setStatus(e.message||'Unable to load matrix.',true)}finally{$('load').disabled=false}}
-function findTrains(){const from=$('from').value.trim(),to=$('to').value.trim(),date=$('date').value;if(!from||!to||!date){setStatus('Select From, To and Date.',true);return}if(norm(from)===norm(to)){setStatus('From and To must be different.',true);return}const out=[],ret=[];for(const [no,name] of TRAINS){const d=typeof TRAIN_DIRECTIONS!=='undefined'?TRAIN_DIRECTIONS[String(no)]:null;if(!d)continue;const a=norm(d[0]),b=norm(d[1]);if(a===norm(from)&&b===norm(to))out.push({trainModel:String(no),name,from:d[0],to:d[1],direction:'GOING'});if(a===norm(to)&&b===norm(from))ret.push({trainModel:String(no),name,from:d[0],to:d[1],direction:'RETURN'})}finderData={from,to,date,outbound:out,returning:ret,all:[...out,...ret],source:'train-master'};renderFinder(finderData);setStatus(`Found ${finderData.all.length} train(s) in the train master.`)}
+async function findTrains(){
+  const from=$('from').value.trim(),to=$('to').value.trim(),date=$('date').value;
+  if(!from||!to||!date){setStatus('Select From, To and Date.',true);return}
+  if(norm(from)===norm(to)){setStatus('From and To must be different.',true);return}
+  $('load').disabled=true;
+  setStatus('Searching live train routes…');
+  try{
+    const q=new URLSearchParams({from,to,date});
+    const r=await fetch('/api/finder?'+q,{cache:'no-store'});
+    const j=await r.json();
+    if(!r.ok||!j.ok)throw new Error(j.error||'Train Finder request failed');
+    finderData=j;
+    renderFinder(finderData);
+    setStatus(`Found ${finderData.all.length} train(s) from live route data.`);
+  }catch(e){
+    finderData=null;
+    $('finderResult').hidden=false;
+    $('finderRoute').textContent=`${from} → ${to}`;
+    $('finderMeta').textContent='';
+    $('outboundList').innerHTML='<div class="emptyFinder">Unable to load live train routes. Please try again.</div>';
+    $('returnList').innerHTML='';
+    setStatus(e.message||'Unable to load train routes.',true);
+  }finally{$('load').disabled=false}
+}
 function renderFinder(data){$('result').hidden=true;$('finderResult').hidden=false;$('finderRoute').textContent=`${data.from} → ${data.to}`;$('finderMeta').textContent=`${data.date} • ${data.outbound.length} going · ${data.returning.length} return`;$('outboundList').innerHTML=renderTrainCards(data.outbound);$('returnList').innerHTML=renderTrainCards(data.returning);document.querySelectorAll('.finderCard').forEach(card=>card.onclick=()=>{const t=data.all.find(x=>String(x.trainModel)===card.dataset.model&&norm(x.from)===norm(decodeURIComponent(card.dataset.from))&&norm(x.to)===norm(decodeURIComponent(card.dataset.to)));if(t)selectFinderTrain(t)})}
 function renderTrainCards(list){if(!list.length)return '<div class="emptyFinder">No trains found.</div>';return list.map(t=>`<button type="button" class="finderCard" data-model="${t.trainModel}" data-from="${encodeURIComponent(t.from)}" data-to="${encodeURIComponent(t.to)}"><div class="trainIcon">🚆</div><div class="finderMain"><div class="finderName">${t.name} <span>(${t.trainModel})</span></div><div class="finderRouteMini">${t.from} → ${t.to}</div><div class="finderTimes">${t.fromTime&&t.toTime?`<b>${t.fromTime}</b><span>→</span><b>${t.toTime}</b>${t.duration?`<em>${t.duration}</em>`:''}`:'Route match'}</div></div><div class="finderArrow">›</div></button>`).join('')}
 async function selectFinderTrain(t){$('from').value=t.from;$('to').value=t.to;$('train').value=`${t.name} (${t.trainModel})`;updateTrainInfo();setMode('matrix');setStatus(`Loading ${t.name} (${t.trainModel})…`);await load()}

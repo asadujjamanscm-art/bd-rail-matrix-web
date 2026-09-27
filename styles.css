@@ -43,3 +43,7 @@
 /* v1.1.9 station date + time inside matrix */
 .matrix td:first-child{vertical-align:middle}.matrixStationName{font-size:10px;font-weight:800;line-height:1.15}.matrixStationMeta{margin-top:3px;color:#087443;font-size:7px;font-weight:750;line-height:1.1;white-space:nowrap}.matrixStationMeta::first-letter{}
 @media(max-width:560px){.matrixStationMeta{font-size:7px}.matrixStationName{font-size:10px}}
+
+/* v1.1.13 fare inside seat breakdown */
+.breakdownFare{display:block;margin-top:5px;color:#087443;font-size:9px;font-weight:900}
+@media(max-width:560px){.breakdownFare{font-size:9px}}

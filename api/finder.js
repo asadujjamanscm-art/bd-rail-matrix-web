@@ -1,6 +1,6 @@
 // Live Train Finder route lookup.
-// Uses the Shohoz Railway route endpoint to get the actual ordered stops for each train.
-// This is intentionally separate from /api/matrix so the working Matrix path remains untouched.
+// Uses the Shohoz Railway route endpoint to get the actual ordered stops,
+// station times and day information for each train.
 
 const MODELS = [
   701,702,703,704,705,706,707,708,709,710,711,712,713,714,715,716,717,718,719,720,
@@ -74,52 +74,118 @@ function extractRoutes(data){
   const candidates=[];
   if(Array.isArray(root.routes)) candidates.push(root.routes);
   if(Array.isArray(root.route)) candidates.push(root.route);
-  for(const key of ['train','train_data','trainData','result']){
+  if(Array.isArray(root.stations)) candidates.push(root.stations);
+  for(const key of ['train','train_data','trainData','result','route_data','routeData']){
     const x=root[key];
+    if(Array.isArray(x)) candidates.push(x);
     if(x && Array.isArray(x.routes)) candidates.push(x.routes);
+    if(x && Array.isArray(x.stations)) candidates.push(x.stations);
   }
-  const routes=candidates.find(a=>a.some(x=>x && (x.city||x.station||x.name||x.station_name)))||[];
+  const routes=candidates.find(a=>a.some(x=>x && (x.city||x.station||x.name||x.station_name||x.city_name)))||[];
   return routes;
 }
 
 function stopName(s){
   if(typeof s==='string')return s;
   if(!s||typeof s!=='object')return '';
-  return s.city||s.station||s.station_name||s.name||s.stop_name||s.location?.name||'';
+  return s.city||s.city_name||s.station||s.station_name||s.name||s.stop_name||s.location?.name||'';
+}
+
+function firstValue(obj,keys){
+  for(const k of keys){
+    const v=obj?.[k];
+    if(v!==undefined&&v!==null&&String(v).trim()!=='')return v;
+  }
+  return '';
+}
+
+function stopTime(s,kind){
+  if(!s||typeof s!=='object')return '';
+  const keys=kind==='arrival'
+    ? ['arrival_time','arrivalTime','arrive_time','arriveTime','arrival','time_arrival']
+    : ['departure_time','departureTime','depart_time','departTime','departure','time_departure'];
+  const v=firstValue(s,keys);
+  if(typeof v==='object')return firstValue(v,['time','value','display','datetime','date_time']);
+  return String(v||'');
+}
+
+function stopDate(s,kind){
+  if(!s||typeof s!=='object')return '';
+  const keys=kind==='arrival'
+    ? ['arrival_date','arrivalDate','date_arrival']
+    : ['departure_date','departureDate','date_departure','date'];
+  return String(firstValue(s,keys)||'');
+}
+
+function cleanTime(v){
+  if(!v)return '';
+  const s=String(v).trim().replace(/\s+BST$/i,'');
+  const m=s.match(/(\d{1,2}:\d{2})(?::\d{2})?\s*(AM|PM)?/i);
+  if(!m)return s;
+  const hhmm=m[1], ap=m[2];
+  return ap?`${hhmm} ${ap.toUpperCase()}`:hhmm;
+}
+
+function toMinutes(v){
+  const s=String(v||'').toUpperCase().trim();
+  const m=s.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/);
+  if(!m)return null;
+  let h=Number(m[1]), min=Number(m[2]);
+  if(m[3]==='PM'&&h<12)h+=12;
+  if(m[3]==='AM'&&h===12)h=0;
+  return h*60+min;
+}
+
+function durationBetween(dateA,timeA,dateB,timeB,baseDate){
+  if(!timeA||!timeB)return '';
+  const parse=(d,t)=>{
+    const tm=toMinutes(t); if(tm===null)return null;
+    let day=0;
+    if(d&&baseDate){
+      const a=new Date(`${baseDate}T00:00:00`), b=new Date(`${d}T00:00:00`);
+      if(!Number.isNaN(a)&&!Number.isNaN(b)) day=Math.round((b-a)/86400000);
+    }
+    return day*1440+tm;
+  };
+  let a=parse(dateA,timeA), b=parse(dateB,timeB);
+  if(a===null||b===null)return '';
+  while(b<a)b+=1440;
+  const mins=b-a,h=Math.floor(mins/60),m=mins%60;
+  return `${h}h ${m}m`;
+}
+
+function normalizeStop(s,index,baseDate){
+  const name=stopName(s);
+  const arrival=cleanTime(stopTime(s,'arrival'));
+  const departure=cleanTime(stopTime(s,'departure'));
+  const date=stopDate(s,'departure')||stopDate(s,'arrival')||baseDate;
+  return {index,name,arrival,departure,date,raw:s};
 }
 
 async function fetchRoute(model,date){
   const key=`${model}|${date}`;
   const cached=routeCache.get(key);
   if(cached && Date.now()-cached.at<CACHE_MS)return cached.value;
-
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
   try{
     const r=await fetch('https://railspaapi.shohoz.com/v1.0/web/train-routes',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},
       body:JSON.stringify({model:String(model),departure_date_time:date}),
-      signal:controller.signal,
-      cache:'no-store'
+      signal:controller.signal,cache:'no-store'
     });
     if(!r.ok)throw new Error(`HTTP ${r.status}`);
     const j=await r.json();
-    const value={data:j?.data ?? j, routes:extractRoutes(j)};
+    const value={data:j?.data ?? j,routes:extractRoutes(j)};
     routeCache.set(key,{at:Date.now(),value});
     return value;
-  } finally { clearTimeout(timer); }
+  } finally {clearTimeout(timer);}
 }
 
 async function mapLimit(items,limit,fn){
-  const out=new Array(items.length);
-  let next=0;
+  const out=new Array(items.length); let next=0;
   async function worker(){
-    while(true){
-      const i=next++;
-      if(i>=items.length)return;
-      try{out[i]=await fn(items[i],i)}catch(e){out[i]={error:e?.message||String(e)}}
-    }
+    while(true){const i=next++;if(i>=items.length)return;try{out[i]=await fn(items[i],i)}catch(e){out[i]={error:e?.message||String(e)}}}
   }
   await Promise.all(Array.from({length:Math.min(limit,items.length)},()=>worker()));
   return out;
@@ -134,18 +200,54 @@ export default async function handler(req,res){
   const results=await mapLimit(MODELS,CONCURRENCY,async model=>{
     const x=await fetchRoute(model,date);
     const routes=x.routes||[];
-    const names=routes.map(stopName).filter(Boolean);
-    const fi=names.findIndex(s=>sameStation(s,from));
-    const ti=names.findIndex(s=>sameStation(s,to));
-    if(fi<0 || ti<0 || fi===ti)return null;
-    const t=fi<ti?'GOING':'RETURN';
-    const stops=names.slice(Math.min(fi,ti),Math.max(fi,ti)+1);
-    return {trainModel:String(model),name:TRAIN_NAMES[model]||String(model),from,to,direction:t,fromIndex:fi,toIndex:ti,stops};
+    const stops=routes.map((s,i)=>normalizeStop(s,i,date)).filter(s=>s.name);
+    let inferredDay=0,previousMinutes=null;
+    for(const stop of stops){
+      const tm=toMinutes(stop.departure||stop.arrival);
+      if(tm!==null&&previousMinutes!==null&&tm<previousMinutes) inferredDay++;
+      if(tm!==null) previousMinutes=tm;
+      if(!stop.date || stop.date===date){
+        const d=new Date(`${date}T00:00:00`); d.setDate(d.getDate()+inferredDay);
+        stop.date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      }
+    }
+    const fi=stops.findIndex(s=>sameStation(s.name,from));
+    const ti=stops.findIndex(s=>sameStation(s.name,to));
+    if(fi<0||ti<0||fi===ti)return null;
+
+    const going=fi<ti;
+    const start=stops[fi], end=stops[ti];
+    const fromTime=cleanTime(start.departure||start.arrival);
+    const toTime=cleanTime(end.arrival||end.departure);
+    const duration=going
+      ? durationBetween(start.date,fromTime,end.date,toTime,date)
+      : durationBetween(end.date,cleanTime(end.departure||end.arrival),start.date,cleanTime(start.arrival||start.departure),date);
+    const actualFrom=going?from:to;
+    const actualTo=going?to:from;
+
+    return {
+      trainModel:String(model),name:TRAIN_NAMES[model]||String(model),
+      direction:going?'GOING':'RETURN',
+      queryFrom:from,queryTo:to,
+      actualFrom,actualTo,
+      fromTime:going?fromTime:cleanTime(end.departure||end.arrival),
+      toTime:going?toTime:cleanTime(start.arrival||start.departure),
+      duration,
+      fromDate:going?(start.date||date):(end.date||date),
+      toDate:going?(end.date||date):(start.date||date),
+      stops:stops.map((s,idx)=>({...s,index:idx}))
+    };
   });
 
   const all=results.filter(Boolean).filter(x=>!x.error);
   const outbound=all.filter(x=>x.direction==='GOING');
   const returning=all.filter(x=>x.direction==='RETURN');
+  const sortByTime=(a,b)=>{
+    const am=toMinutes(a.fromTime),bm=toMinutes(b.fromTime);
+    if(am===null&&bm===null)return Number(a.trainModel)-Number(b.trainModel);
+    if(am===null)return 1;if(bm===null)return -1;return am-bm;
+  };
+  outbound.sort(sortByTime);returning.sort(sortByTime);
   res.setHeader('Cache-Control','s-maxage=60, stale-while-revalidate=300');
   return res.status(200).json({ok:true,source:'Shohoz train-routes',from,to,date,outbound,returning,all:[...outbound,...returning],checked:MODELS.length});
 }

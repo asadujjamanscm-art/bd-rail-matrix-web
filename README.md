@@ -1,16 +1,12 @@
-# BD Rail Matrix — Public Web POC
+# BD Rail Matrix v1.1.1 — Train Finder Route Fix
 
-This is a Vercel-ready public web prototype based on the existing BD Rail Matrix 1.1.7 data/UI patterns.
+v1.1.1 keeps the existing working Matrix API/UI unchanged and fixes the Train Finder.
 
-## Structure
-- `index.html` — public Matrix UI
-- `app.js` — station/train/date UI and matrix rendering
-- `stations.js` — station master from Matrix 1.1.7
-- `train-data.js` — canonical train master from Matrix 1.1.7
-- `api/matrix.js` — server-side RailMatrix fetch + initialData parser
+Changes:
+- Station dropdown focus bug fixed (`undefined` entries removed).
+- Train Finder now uses live ordered train-route data from the Shohoz Railway route endpoint.
+- Finder matches intermediate stations, not only endpoint stations.
+- Direction is determined by the actual stop order: From → To or To → From.
+- Existing `/api/matrix` remains unchanged.
 
-## Deploy
-Import this folder/repository into Vercel. The `/api/matrix` function is same-origin and the browser does not call the upstream RailMatrix host directly.
-
-## Important
-This is a technical POC. Before public distribution, verify upstream RailMatrix usage/permission, CORS/upstream behavior, rate limits, and acceptable traffic patterns.
+The Finder does not perform booking, OTP, CAPTCHA, payment, or any ticket action.

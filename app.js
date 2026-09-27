@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 const norm=s=>String(s||'').toLowerCase().replace(/[’']/g,"'").replace(/_/g,' ').replace(/\s+/g,' ').trim();
 const aliases={'kishoreganj':'kishorganj','kishore gonj':'kishorganj','pakshi':'paksey','pakshi railway':'paksey','jessore':'jashore','comilla':'cumilla','commilla':'cumilla','kustia court':'kushtia court','kushtia_court':'kushtia court'};
-let result=null, calendar=new Date(), chosen=null, currentMode='matrix', finderData=null;
+let result=null, calendar=new Date(), chosen=null, currentMode='matrix', finderData=null, selectedFinderTrain=null;
 function stationMatches(q){q=norm(q);const c=aliases[q]||q;return [...new Set(STATIONS)].filter(s=>!q||norm(s).includes(q)||norm(s).includes(c)).slice(0,30)}
 function trainMatches(q){q=norm(q);return TRAINS.filter(([n,name])=>!q||String(n).includes(q)||norm(name).includes(q)).slice(0,30)}
 function menu(input,box,items,onPick){box.innerHTML=items.map(x=>`<div class="item" data-v="${encodeURIComponent(x.v)}"><b>${x.title}</b>${x.sub?`<span>${x.sub}</span>`:''}</div>`).join('');box.classList.toggle('open',items.length>0);box.querySelectorAll('.item').forEach(el=>el.onclick=()=>{onPick(decodeURIComponent(el.dataset.v));box.classList.remove('open')})}
@@ -24,7 +24,7 @@ $('date').onclick=openDatePicker;$('prev').onclick=()=>{calendar.setMonth(calend
 function setStatus(t,error=false){$('status').textContent=t;$('status').classList.toggle('error',error);$('status').classList.toggle('loading',!error && /^(Loading|Searching)/.test(t))}
 function setLoading(on,label){const b=$('load');b.disabled=on;b.classList.toggle('is-loading',on);if(on){b.textContent=label||'LOADING LIVE DATA…'}else{b.textContent=currentMode==='matrix'?'SEAT MATRIX':'FIND TRAINS'}}
 function render(data){result=data;$('result').hidden=false;$('finderResult').hidden=true;$('title').textContent=data.request.display;$('route').textContent=`${data.request.from} → ${data.request.to}`;$('loadedAt').textContent=`Updated ${new Date().toLocaleTimeString()}`;const classes=[...new Set(data.pairs.flatMap(p=>Object.keys(p.classes||{})))];$('cls').innerHTML='<option value="">All classes</option>'+classes.map(c=>`<option>${c}</option>`).join('');draw()}
-function draw(){if(!result)return;const cls=$('cls').value,filter=norm($('filter').value),pairs=result.pairs.filter(p=>!filter||norm(p.origin).includes(filter)||norm(p.dest).includes(filter));const stations=[...new Set(pairs.flatMap(p=>[p.origin,p.dest]))];const fromKey=norm(result.request.from),toKey=norm(result.request.to);let h='<div class="matrix"><table><thead><tr><th>STATION</th>'+stations.map(s=>`<th class="${norm(s)===toKey?'routeCol':''}">${s}</th>`).join('')+'</tr></thead><tbody>';for(const s of stations){const rowHi=norm(s)===fromKey;h+=`<tr class="${rowHi?'routeRow':''}"><td>${s}</td>`;for(const t of stations){const p=pairs.find(x=>x.origin===s&&x.dest===t);let val=0, classCount=0;if(p){const cs=cls&&p.classes[cls]?[p.classes[cls]]:Object.values(p.classes||{});val=cs.reduce((a,c)=>a+Number(c.total||0),0);classCount=cs.filter(c=>Number(c.total||0)>0).length}const classLabel=classCount===1?'class': 'classes';const suffix=val&&classCount?` <small class="cellClasses">${classCount} ${classLabel}</small>`:'';const colHi=norm(t)===toKey;const intersect=rowHi&&colHi;h+=`<td class="${colHi?'routeColCell':''}"><button type="button" class="cell ${val?'has':'zero'} ${intersect?'routeIntersection':''}" data-origin="${encodeURIComponent(s)}" data-dest="${encodeURIComponent(t)}" ${val?'':'disabled'}>${val||'—'}${suffix}</button></td>`}h+='</tr>'}h+='</tbody></table></div>';$('matrix').innerHTML=h;$('matrix').querySelectorAll('.cell.has').forEach(b=>b.onclick=()=>openBreakdown(decodeURIComponent(b.dataset.origin),decodeURIComponent(b.dataset.dest)));}
+function draw(){if(!result)return;const cls=$('cls').value,filter=norm($('filter').value),pairs=result.pairs.filter(p=>!filter||norm(p.origin).includes(filter)||norm(p.dest).includes(filter));const stations=[...new Set(pairs.flatMap(p=>[p.origin,p.dest]))];const fromKey=norm(result.request.from),toKey=norm(result.request.to);let h='<div class="matrix"><table><thead><tr><th>STATION</th>'+stations.map(s=>`<th class="${norm(s)===toKey?'routeCol':''}">${s}</th>`).join('')+'</tr></thead><tbody>';for(const s of stations){const rowHi=norm(s)===fromKey;h+=`<tr class="${rowHi?'routeRow':''}"><td>${s}</td>`;for(const t of stations){const p=pairs.find(x=>x.origin===s&&x.dest===t);let val=0, classCount=0;if(p){const cs=cls&&p.classes[cls]?[p.classes[cls]]:Object.values(p.classes||{});val=cs.reduce((a,c)=>a+Number(c.total||0),0);classCount=cs.filter(c=>Number(c.total||0)>0).length}const classLabel=classCount===1?'class':'classes';const suffix=val&&classCount?` <small class="cellClasses">${classCount} ${classLabel}</small>`:(p&&Object.keys(p.classes||{}).length?` <small class="cellClasses">No available</small>`:'');const colHi=norm(t)===toKey;const intersect=rowHi&&colHi;const shown=val|| (p&&Object.keys(p.classes||{}).length?'0':'—');h+=`<td class="${colHi?'routeColCell':''}"><button type="button" class="cell ${val?'has':'zero'} ${intersect?'routeIntersection':''}" data-origin="${encodeURIComponent(s)}" data-dest="${encodeURIComponent(t)}" ${val?'':'disabled'}>${shown}${suffix}</button></td>`}h+='</tr>'}h+='</tbody></table></div>';$('matrix').innerHTML=h;$('matrix').querySelectorAll('.cell.has').forEach(b=>b.onclick=()=>openBreakdown(decodeURIComponent(b.dataset.origin),decodeURIComponent(b.dataset.dest)));}
 function openBreakdown(origin,dest){const p=result?.pairs?.find(x=>x.origin===origin&&x.dest===dest);if(!p)return;const classes=Object.entries(p.classes||{}).map(([name,c])=>({name,...c,total:Number(c.total||0),online:Number(c.online||0),offline:Number(c.offline||0)})).sort((a,b)=>b.total-a.total);const total=classes.reduce((a,c)=>a+c.total,0);$('breakdownTitle').textContent=`${origin} → ${dest}`;$('breakdownList').innerHTML=classes.length?classes.map(c=>`<div class="breakdownRow"><div><b>${c.name}</b><small>${c.online} online · ${c.offline} offline</small></div><strong>${c.total}</strong></div>`).join(''):'<div class="breakdownEmpty">No class breakdown available.</div>';$('breakdownTotal').textContent=total;$('breakdownModal').classList.add('open');$('breakdownModal').setAttribute('aria-hidden','false')}
 function closeBreakdown(){$('breakdownModal').classList.remove('open');$('breakdownModal').setAttribute('aria-hidden','true')}
 async function load(){const tr=parsedTrain(),from=$('from').value.trim(),to=$('to').value.trim(),date=$('date').value;if(!from||!to||!date||!tr){setStatus('Enter valid From, To, Date and Train.',true);return}result=null;$('result').hidden=true;$('matrix').innerHTML='';const specific=`${tr.display} • ${from} → ${to}`;setLoading(true,`LOADING ${tr.display.toUpperCase()}…`);setStatus(`Loading ${specific}…`);try{const q=new URLSearchParams({from,to,date,trainModel:tr.model,tripNumber:tr.trip,display:tr.display});const r=await fetch('/api/matrix?'+q);const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Matrix request failed');render(j.data);setStatus('Live matrix loaded.')}catch(e){setStatus(e.message||'Unable to load matrix.',true)}finally{setLoading(false)}}
@@ -52,11 +52,63 @@ async function findTrains(){
     setStatus(e.message||'Unable to load train routes.',true);
   }finally{setLoading(false)}
 }
-function renderFinder(data){$('result').hidden=true;$('finderResult').hidden=false;$('finderRoute').textContent=`${data.from} → ${data.to}`;$('finderMeta').textContent=`${data.date} • ${data.outbound.length} going · ${data.returning.length} return`;$('outboundList').innerHTML=renderTrainCards(data.outbound);$('returnList').innerHTML=renderTrainCards(data.returning);document.querySelectorAll('.finderCard').forEach(card=>card.onclick=()=>{const t=data.all.find(x=>String(x.trainModel)===card.dataset.model&&norm(x.from)===norm(decodeURIComponent(card.dataset.from))&&norm(x.to)===norm(decodeURIComponent(card.dataset.to)));if(t)selectFinderTrain(t)})}
-function renderTrainCards(list){if(!list.length)return '<div class="emptyFinder">No trains found.</div>';return list.map(t=>{const route=t.direction==='RETURN'?`${t.to} → ${t.from}`:`${t.from} → ${t.to}`;return `<button type="button" class="finderCard" data-model="${t.trainModel}" data-from="${encodeURIComponent(t.from)}" data-to="${encodeURIComponent(t.to)}"><div class="trainIcon">🚆</div><div class="finderMain"><div class="finderName">${t.name} <span>(${t.trainModel})</span></div><div class="finderRouteMini">${route}</div><div class="finderTimes">${t.fromTime&&t.toTime?`<b>${t.fromTime}</b><span>→</span><b>${t.toTime}</b>${t.duration?`<em>${t.duration}</em>`:''}`:'Route match'}</div></div><div class="finderArrow">›</div></button>`}).join('')}
-async function selectFinderTrain(t){const actualFrom=t.direction==='RETURN'?t.to:t.from;const actualTo=t.direction==='RETURN'?t.from:t.to;$('from').value=actualFrom;$('to').value=actualTo;$('train').value=`${t.name} (${t.trainModel})`;updateTrainInfo();setMode('matrix');setStatus(`Loading ${t.name} (${t.trainModel}) • ${actualFrom} → ${actualTo}…`);await load()}
+function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function displayDate(v){if(!v)return '';const d=new Date(v+'T00:00:00');if(Number.isNaN(d.getTime()))return v;return d.toLocaleDateString('en-US',{day:'2-digit',month:'short'}).replace(/^0/,'')}
+function renderFinder(data){
+  $('result').hidden=true;$('finderResult').hidden=false;
+  $('finderRoute').textContent=`${data.from} → ${data.to}`;
+  const first=[...data.outbound].find(x=>x.fromTime)||data.outbound[0];
+  const last=[...data.outbound].slice(-1)[0];
+  $('finderMeta').innerHTML=`${esc(data.date)} • ${data.outbound.length} going · ${data.returning.length} return${first&&last&&first!==last?`<span class="finderRange"> · First ${esc(first.fromTime||'—')} · Last ${esc(last.fromTime||'—')}</span>`:''}`;
+  $('outboundList').innerHTML=renderTrainCards(data.outbound);
+  $('returnList').innerHTML=renderTrainCards(data.returning);
+  document.querySelectorAll('.finderCard').forEach(card=>card.onclick=()=>{
+    const t=data.all.find(x=>String(x.trainModel)===card.dataset.model && x.direction===card.dataset.direction);
+    if(t)openRouteDetails(t);
+  });
+}
+function renderTrainCards(list){
+  if(!list.length)return '<div class="emptyFinder">No trains found.</div>';
+  return list.map((t,i)=>{
+    const first=i===0,last=i===list.length-1;
+    const badges=`${first?'<span class="finderBadge first">FIRST</span>':''}${last&&!first?'<span class="finderBadge last">LAST</span>':''}`;
+    const dateLine=t.fromDate&&t.toDate&&t.fromDate!==t.toDate
+      ?`${displayDate(t.fromDate)} → ${displayDate(t.toDate)}`
+      :displayDate(t.fromDate||t.toDate);
+    const timeBlock=t.fromTime&&t.toTime
+      ?`<div class="finderTimes"><b>${esc(t.fromTime)}</b><span>→</span><b>${esc(t.toTime)}</b>${t.duration?`<em>${esc(t.duration)}</em>`:''}</div>`
+      :'<div class="finderTimes muted">Time not available</div>';
+    return `<button type="button" class="finderCard" data-model="${esc(t.trainModel)}" data-direction="${esc(t.direction)}">
+      <div class="trainIcon">🚆</div><div class="finderMain">
+        <div class="finderName">${esc(t.name)} <span>(${esc(t.trainModel)})</span> ${badges}</div>
+        <div class="finderRouteMini">${esc(t.actualFrom)} → ${esc(t.actualTo)}</div>
+        ${timeBlock}${dateLine?`<div class="finderDate">${esc(dateLine)}</div>`:''}
+      </div><div class="finderArrow">›</div></button>`;
+  }).join('');
+}
+function openRouteDetails(t){
+  selectedFinderTrain=t;
+  $('routeModalTitle').textContent=`${t.name} (${t.trainModel})`;
+  $('routeModalRoute').textContent=`${t.actualFrom} → ${t.actualTo}`;
+  $('routeModalMeta').textContent=`${t.fromTime||'—'} → ${t.toTime||'—'}${t.duration?` · ${t.duration}`:''}`;
+  const selectedFrom=norm(t.actualFrom),selectedTo=norm(t.actualTo);
+  const stops=t.stops||[];
+  $('routeStops').innerHTML=stops.map((s,i)=>{
+    const isStart=norm(s.name)===selectedFrom, isEnd=norm(s.name)===selectedTo;
+    const date=s.date?displayDate(s.date):'';
+    return `<div class="routeStop ${isStart?'selectedStart':''} ${isEnd?'selectedEnd':''}">
+      <div class="routeRail"><span class="routeNode"></span>${i<stops.length-1?'<span class="routeLine"></span>':''}</div>
+      <div class="routeStopBody"><div class="routeStopTop"><b>${esc(s.name)}</b>${isStart?'<span class="stationTag start">FROM</span>':''}${isEnd?'<span class="stationTag end">TO</span>':''}</div>
+      <div class="routeStopTimes">${s.arrival?`<span><small>Arrival</small><strong>${esc(s.arrival)}</strong></span>`:''}${s.departure?`<span><small>Departure</small><strong>${esc(s.departure)}</strong></span>`:''}${date?`<span class="routeStopDate">${esc(date)}</span>`:''}</div></div>
+    </div>`;
+  }).join('')||'<div class="emptyFinder">Route timing data is not available.</div>';
+  $('routeModal').classList.add('open');$('routeModal').setAttribute('aria-hidden','false');
+}
+function closeRouteDetails(){$('routeModal').classList.remove('open');$('routeModal').setAttribute('aria-hidden','true')}
+async function selectFinderTrain(t){const actualFrom=t.actualFrom|| (t.direction==='RETURN'?t.queryTo:t.queryFrom);const actualTo=t.actualTo|| (t.direction==='RETURN'?t.queryFrom:t.queryTo);$('from').value=actualFrom;$('to').value=actualTo;$('train').value=`${t.name} (${t.trainModel})`;updateTrainInfo();setMode('matrix');setStatus(`Loading ${t.name} (${t.trainModel}) • ${actualFrom} → ${actualTo}…`);await load()}
 function setMode(mode){currentMode=mode;document.querySelectorAll('.modeTab').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));$('trainField').style.display=mode==='matrix'?'':'none';$('load').textContent=mode==='matrix'?'SEAT MATRIX':'FIND TRAINS';$('result').hidden=mode!=='matrix'||!result;$('finderResult').hidden=mode!=='finder'||!finderData;if(mode==='finder')setStatus('Select From, To and Date.')}
 document.querySelectorAll('.modeTab').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 $('load').onclick=()=>currentMode==='matrix'?load():findTrains();$('refresh').onclick=load;$('cls').onchange=draw;$('filter').oninput=draw;updateTrainInfo();setMode('matrix');
 
+$('routeClose').onclick=closeRouteDetails;$('routeMatrixBtn').onclick=()=>{if(selectedFinderTrain){closeRouteDetails();selectFinderTrain(selectedFinderTrain)}};$('routeModal').onclick=e=>{if(e.target===$('routeModal'))closeRouteDetails()};
 $('breakdownClose').onclick=closeBreakdown;$('breakdownModal').onclick=e=>{if(e.target===$('breakdownModal'))closeBreakdown()};

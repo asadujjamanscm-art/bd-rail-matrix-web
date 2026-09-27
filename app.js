@@ -63,9 +63,11 @@ function renderFinder(data){
   $('finderMeta').innerHTML=`${esc(data.date)} • ${data.outbound.length} going · ${data.returning.length} return${first&&last&&first!==last?`<span class="finderRange"> · First ${esc(first.fromTime||'—')} · Last ${esc(last.fromTime||'—')}</span>`:''}`;
   $('outboundList').innerHTML=renderTrainCards(data.outbound);
   $('returnList').innerHTML=renderTrainCards(data.returning);
-  document.querySelectorAll('.finderCard').forEach(card=>card.onclick=()=>{
+  document.querySelectorAll('.finderCard').forEach(card=>{
     const t=data.all.find(x=>String(x.trainModel)===card.dataset.model && x.direction===card.dataset.direction);
-    if(t)openRouteDetails(t);
+    card.onclick=()=>{if(t)selectFinderTrain(t)};
+    const details=card.querySelector('.finderDetails');
+    if(details)details.onclick=e=>{e.stopPropagation();if(t)openRouteDetails(t)};
   });
 }
 function renderTrainCards(list){
@@ -84,7 +86,7 @@ function renderTrainCards(list){
         <div class="finderName">${esc(t.name)} <span>(${esc(t.trainModel)})</span> ${badges}</div>
         <div class="finderRouteMini">${esc(t.actualFrom)} → ${esc(t.actualTo)}</div>
         ${timeBlock}${dateLine?`<div class="finderDate">${esc(dateLine)}</div>`:''}
-      </div><div class="finderArrow">›</div></button>`;
+      </div><span class="finderDetails" role="button" tabindex="0" title="View full route">›</span></button>`;
   }).join('');
 }
 function openRouteDetails(t){
